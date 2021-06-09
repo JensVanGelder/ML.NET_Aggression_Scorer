@@ -12,7 +12,7 @@ namespace AggressionScorerModel
     public static class AggressionScoreServiceExtensions
     {
         private static readonly string _modelFile =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Model", "AggressionScoreModel.zip");
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Model", "AggressionScoreRetrainedModel.zip");
 
         public static void AddAggressionScorerPredictionEnginePool(this IServiceCollection services)
         {
