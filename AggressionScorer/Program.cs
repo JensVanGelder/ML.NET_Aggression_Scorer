@@ -4,6 +4,7 @@ using Microsoft.ML.Calibrators;
 using Microsoft.ML.Trainers;
 using System;
 using System.IO;
+using System.Linq;
 
 namespace AggressionScorer
 {
@@ -11,9 +12,13 @@ namespace AggressionScorer
     {
         private static void Main(string[] args)
         {
+            //CrossValidate();
+            //return;
+
             Console.WriteLine("Aggression scorer model builder started.");
 
             var mlContext = new MLContext(0);
+
             //Load data
             Console.WriteLine("Loading data");
 
@@ -90,6 +95,53 @@ namespace AggressionScorer
             Console.WriteLine("The model is saved to {0}", retrainedModelFile);
 
             EvaluateModel(mlContext, completeRetrainedPipeline, inputDataSplit.TestSet);
+        }
+
+        private static void CrossValidate()
+        {
+            var mlContext = new MLContext(0);
+
+            //Creating a small data set for faster cross validation
+            string createdInputFile = @"Data\preparedInput.tsv";
+            DataPreparer.CreatePreparedDataFile(createdInputFile, onlySaveSmallSubset: true);
+
+            //Load the data from the file into a DataView
+            IDataView inputDataView = mlContext.Data.LoadFromTextFile<ModelInput>(
+                path: createdInputFile,
+                hasHeader: true,
+                separatorChar: '\t',
+                allowQuoting: true
+            );
+
+            // Prepare input data to a form consumable by a machine learning model
+            var dataPipeline = mlContext
+                .Transforms
+                .Text
+                .FeaturizeText("Features", "Comment")
+                .Append(mlContext.Transforms.NormalizeMeanVariance("Features"))
+                .AppendCacheCheckpoint(mlContext);
+
+            // Create the training algorithms
+            var trainers = new IEstimator<ITransformer>[]
+            {
+                mlContext.BinaryClassification.Trainers.LbfgsLogisticRegression(),
+                mlContext.BinaryClassification.Trainers.SgdCalibrated()
+            }.Reverse();
+
+            foreach (var trainer in trainers)
+            {
+                var modelPipeline = dataPipeline.Append(trainer);
+
+                var crossValidationResults = mlContext
+                    .BinaryClassification
+                    .CrossValidate(inputDataView, modelPipeline, numberOfFolds: 5);
+
+                var averageAccuracy = crossValidationResults.Average(m => m.Metrics.Accuracy);
+                Console.WriteLine($"Cross validated average accuracy: {averageAccuracy:0.###}");
+
+                var averageF1Score = crossValidationResults.Average(m => m.Metrics.F1Score);
+                Console.WriteLine($"Cross validated average F1Score: {averageF1Score:0.###}");
+            }
         }
 
         private static ITransformer RetrainModel(string modelFile, string dataPreparePipelineFile)
